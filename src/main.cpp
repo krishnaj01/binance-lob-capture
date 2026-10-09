@@ -1,6 +1,7 @@
 #include <exception>
 #include <iostream>
 
+#include "app/LiveCapture.hpp"
 #include "cli/Options.hpp"
 #include "common/Metrics.hpp"
 #include "replay/Replay.hpp"
@@ -18,9 +19,7 @@ int main(int argc, char** argv) {
             metrics.report(std::cerr);
             return 0;
         }
-
-        std::cerr << "live capture is not implemented yet\n";
-        return 2;
+        return blc::run_live_capture(*opts, metrics);
     } catch (const std::exception& e) {
         std::cerr << "error: " << e.what() << '\n';
         return 1;

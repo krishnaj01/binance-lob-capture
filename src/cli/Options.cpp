@@ -53,6 +53,8 @@ std::optional<Options> parse_options(int argc, char** argv) {
         ("help,h", "show this help")
         ("venue", po::value(&venue)->default_value(venue), "spot | usdm")
         ("symbols", po::value(&symbols), "comma-separated symbols, e.g. BTCUSDT,ETHUSDT")
+        ("symbols-per-shard", po::value(&opts.symbols_per_shard)->default_value(20),
+         "symbols per WebSocket connection (3 streams each; max 66)")
         ("output-dir", po::value(&opts.output_dir)->default_value(opts.output_dir),
          "directory for CSV outputs (created if missing)")
         ("duration", po::value(&opts.duration_sec)->default_value(0),
@@ -60,7 +62,9 @@ std::optional<Options> parse_options(int argc, char** argv) {
         ("metrics-interval", po::value(&opts.metrics_interval_sec)->default_value(10),
          "seconds between metrics reports on stderr (0 = only at exit)")
         ("replay", po::value(&opts.replay_file),
-         "regenerate the order book CSV from this market-data CSV (no network)");
+         "regenerate the order book CSV from this market-data CSV (no network)")
+        ("debug-disconnect-every", po::value(&opts.debug_disconnect_sec)->default_value(0),
+         "testing: drop every connection every N seconds to exercise reconnects (0 = off)");
 
     po::variables_map vm;
     try {
@@ -88,6 +92,9 @@ std::optional<Options> parse_options(int argc, char** argv) {
 
     opts.symbols = parse_symbol_list(symbols);
     if (opts.symbols.empty()) throw std::invalid_argument("--symbols is required for live capture");
+    if (opts.symbols_per_shard == 0 || opts.symbols_per_shard > 66) {
+        throw std::invalid_argument("--symbols-per-shard must be in [1, 66]");
+    }
     return opts;
 }
 

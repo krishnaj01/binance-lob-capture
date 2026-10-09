@@ -6,6 +6,7 @@ add_executable(unit_tests
     common/test_spsc_queue.cpp
     io/test_csv.cpp
     md/test_parser.cpp
+    net/test_stream_url.cpp
     pipeline/test_processor.cpp
     replay/test_replay.cpp)
 target_include_directories(unit_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
