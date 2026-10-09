@@ -33,11 +33,21 @@ include(cmake/Dependencies.cmake)
 
 # Everything except main() lives in a static library so unit tests link the same code.
 add_library(blc_core STATIC
+    src/book/BookSync.cpp
+    src/book/OrderBook.cpp
+    src/book/OrderBookSink.cpp
+    src/cli/Options.cpp
     src/common/Metrics.cpp
     src/io/CsvReader.cpp
-    src/io/CsvWriter.cpp)
+    src/io/CsvWriter.cpp
+    src/md/MarketDataSink.cpp
+    src/md/Parser.cpp
+    src/pipeline/Processor.cpp
+    src/replay/Replay.cpp)
 target_include_directories(blc_core PUBLIC src)
-target_link_libraries(blc_core PUBLIC Threads::Threads PRIVATE blc_options)
+target_link_libraries(blc_core
+    PUBLIC Threads::Threads simdjson::simdjson
+    PRIVATE Boost::program_options blc_options)
 
 add_executable(binance_capture src/main.cpp)
 target_link_libraries(binance_capture PRIVATE blc_core blc_options)
