@@ -19,6 +19,7 @@ void Metrics::report(std::ostream& os) const {
         {"depth_diffs_stale", &depth_diffs_stale},
         {"depth_diffs_unsynced", &depth_diffs_unsynced},
         {"depth5_applied", &depth5_applied},
+        {"depth5_stale", &depth5_stale},
         {"trades", &trades},
         {"sequence_gaps", &sequence_gaps},
         {"market_rows_written", &market_rows_written},
