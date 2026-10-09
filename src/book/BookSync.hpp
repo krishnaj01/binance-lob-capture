@@ -36,8 +36,8 @@ enum class SnapshotAction : std::uint8_t {
 //
 // State machine (documented in the README):
 //   Unsynced --depth5(L)--> Synced(last_id = L)
-//   Synced   --diff-->      Apply   if contiguous   (last_id = u)
-//                           Stale   if u <= last_id
+//   Synced   --diff-->      Stale   if u < last_id, or u == last_id after a diff
+//                           Apply   if contiguous   (last_id = u)
 //                           Gap     otherwise       -> book cleared, Unsynced
 //   Synced   --depth5(L)--> Apply   if L >= last_id (top refreshed, last_id = L)
 //                           Stale   if L <  last_id (snapshot older than the book)
@@ -48,6 +48,12 @@ enum class SnapshotAction : std::uint8_t {
 //                                            only for the first diff straddling a snapshot)
 //   usdm:  pu == last_id  ||  U <= last_id (chained via pu; second clause = straddling)
 // Re-applying a straddling diff is safe because diff quantities are absolute.
+//
+// A diff with u == last_id right after a snapshot is APPLIED, not skipped: on the live
+// feed depth5(L) and the diff ending at u == L describe the same 100 ms tick, and depth5
+// usually arrives first. That diff agrees with the snapshot on the top levels and is the
+// only source of the deeper-level changes in that tick, so skipping it would silently
+// reduce the book to "depth5 only".
 class BookSync {
 public:
     static constexpr std::size_t kSnapshotDepth = 5;
@@ -77,6 +83,7 @@ private:
     OrderBook book_;
     std::uint64_t last_id_ = 0;
     bool synced_ = false;
+    bool last_was_snapshot_ = false;  // last_id_ came from depth5, not from a diff
 };
 
 }  // namespace blc

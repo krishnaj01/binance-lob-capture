@@ -30,7 +30,8 @@ TEST(BookSyncSpot, SnapshotThenContiguousDiffs) {
     EXPECT_TRUE(sync.synced());
     EXPECT_EQ(sync.last_update_id(), 100u);
 
-    EXPECT_EQ(sync.check_diff(spot(95, 100)), DiffAction::Stale);  // fully covered
+    EXPECT_EQ(sync.check_diff(spot(90, 99)), DiffAction::Stale);   // older than snapshot
+    EXPECT_EQ(sync.check_diff(spot(95, 100)), DiffAction::Apply);  // same tick as snapshot
     EXPECT_EQ(sync.check_diff(spot(99, 103)), DiffAction::Apply);  // straddles snapshot
     EXPECT_EQ(sync.check_diff(spot(101, 103)), DiffAction::Apply); // exact successor
     EXPECT_EQ(sync.check_diff(spot(102, 103)), DiffAction::Gap);   // 101 missing
@@ -38,6 +39,7 @@ TEST(BookSyncSpot, SnapshotThenContiguousDiffs) {
     sync.apply_diff(spot(101, 103), {lvl("100", "0"), lvl("100.5", "2")}, {});
     EXPECT_EQ(sync.last_update_id(), 103u);
     EXPECT_EQ(sync.book().best(Side::Bid), lvl("100.5", "2"));
+    EXPECT_EQ(sync.check_diff(spot(103, 103)), DiffAction::Stale);  // u == last, after a diff
     EXPECT_EQ(sync.check_diff(spot(104, 110)), DiffAction::Apply);
     EXPECT_EQ(sync.check_diff(spot(105, 110)), DiffAction::Gap);
 }
@@ -72,8 +74,28 @@ TEST(BookSyncSpot, SnapshotOrderingRelativeToBook) {
     EXPECT_EQ(sync.book().best(Side::Bid), lvl("100", "1"));
     EXPECT_EQ(sync.apply_snapshot(120, kBids, kAsks), SnapshotAction::Apply);
     EXPECT_EQ(sync.last_update_id(), 120u);
-    EXPECT_EQ(sync.check_diff(spot(115, 120)), DiffAction::Stale);
+    EXPECT_EQ(sync.check_diff(spot(111, 119)), DiffAction::Stale);
     EXPECT_EQ(sync.check_diff(spot(118, 125)), DiffAction::Apply);
+}
+
+// Observed live ordering on spot: depth5(L) arrives just before the diff with u == L.
+// That diff must be applied so levels deeper than the top 5 keep tracking the market.
+TEST(BookSyncSpot, SameTickDiffAfterSnapshotUpdatesDeeperLevels) {
+    BookSync sync(Venue::Spot);
+    sync.apply_snapshot(100, kBids, kAsks);
+    sync.apply_diff(spot(101, 110), {lvl("95", "7")}, {});  // deep level, below the top 5
+
+    ASSERT_EQ(sync.apply_snapshot(120, kBids, kAsks), SnapshotAction::Apply);  // tick 120
+    const DepthIds same_tick = spot(111, 120);
+    ASSERT_EQ(sync.check_diff(same_tick), DiffAction::Apply);
+    sync.apply_diff(same_tick, {lvl("100", "1"), lvl("95", "0"), lvl("94", "3")}, {});
+
+    Level levels[7];
+    ASSERT_EQ(sync.book().top(Side::Bid, levels, 7), 6u);
+    EXPECT_EQ(levels[0], lvl("100", "1"));  // agrees with the snapshot
+    EXPECT_EQ(levels[4], lvl("96", "1"));
+    EXPECT_EQ(levels[5], lvl("94", "3"));   // 95 removed, 94 added beyond the top 5
+    EXPECT_EQ(sync.check_diff(spot(121, 125)), DiffAction::Apply);
 }
 
 TEST(BookSyncSpot, InvalidSnapshotIsIgnored) {
@@ -93,7 +115,8 @@ TEST(BookSyncUsdm, ChainsOnPreviousFinalId) {
     BookSync sync(Venue::UsdM);
     ASSERT_EQ(sync.apply_snapshot(1000, kBids, kAsks), SnapshotAction::Apply);
 
-    EXPECT_EQ(sync.check_diff(usdm(990, 1000, 980)), DiffAction::Stale);
+    EXPECT_EQ(sync.check_diff(usdm(980, 990, 970)), DiffAction::Stale);
+    EXPECT_EQ(sync.check_diff(usdm(990, 1000, 980)), DiffAction::Apply);  // same tick
     EXPECT_EQ(sync.check_diff(usdm(995, 1010, 990)), DiffAction::Apply);   // straddles
     EXPECT_EQ(sync.check_diff(usdm(1005, 1010, 1000)), DiffAction::Apply); // pu == last
     EXPECT_EQ(sync.check_diff(usdm(1005, 1010, 1003)), DiffAction::Gap);   // pu mismatch
