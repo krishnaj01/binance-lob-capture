@@ -1,0 +1,24 @@
+# Build artifacts
+build/
+build-*/
+cmake-build-*/
+*.o
+*.a
+*.so
+
+# Runtime output (captures can be large)
+output/
+*.csv
+# ...except checked-in test fixtures and the submission sample
+!tests/fixtures/*.csv
+!samples/*.csv
+
+# Secrets / local config (never commit)
+.env
+config/secrets.json
+
+# Editors / tooling
+.vscode/
+.idea/
+.cache/
+compile_commands.json
