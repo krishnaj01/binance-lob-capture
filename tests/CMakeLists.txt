@@ -14,5 +14,8 @@ target_compile_definitions(unit_tests PRIVATE
     BLC_TEST_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
 target_link_libraries(unit_tests PRIVATE blc_core blc_options GTest::gtest_main)
 
+# `cmake --build build --target tests` (the command used in the assignment brief).
+add_custom_target(tests DEPENDS unit_tests)
+
 include(GoogleTest)
 gtest_discover_tests(unit_tests)
