@@ -18,7 +18,7 @@
 
 #include "common/Clock.hpp"
 #include "common/Log.hpp"
-#include "common/SpscQueue.hpp"
+#include "md/FrameChannel.hpp"
 #include "net/StreamUrl.hpp"
 #include "net/WsClient.hpp"
 #include "pipeline/OutputFiles.hpp"
@@ -29,6 +29,14 @@ namespace blc {
 namespace net = boost::asio;
 
 namespace {
+
+inline void cpu_relax() noexcept {
+#if defined(__x86_64__) || defined(__i386__)
+    __builtin_ia32_pause();
+#elif defined(__aarch64__)
+    asm volatile("yield");
+#endif
+}
 
 // ~16k frames of headroom (~25 s of a busy symbol) before the network thread drops.
 constexpr std::size_t kQueueCapacity = 16 * 1024;
@@ -43,24 +51,38 @@ void report_metrics(const Metrics& metrics, std::size_t queue_depth) {
     Log::info("metrics: ", line, "queue_depth=", queue_depth);
 }
 
-// Processing thread body. Idles with a short sleep when the queue is empty: market data
-// arrives in 100 ms bursts, so a dedicated spinning core buys nothing here, and the
-// added latency (<= 50 us) does not affect the recorded receive timestamps.
-void processor_loop(Processor& processor, Venue venue, SpscQueue<RawFrame>& queue,
-                    const std::atomic<bool>& stop) {
+// Processing thread body. By default it idles with a 50 us sleep when the queue is empty:
+// market data arrives in 100 ms bursts, and the added wait does not affect the recorded
+// receive timestamps (taken on the network thread). --busy-poll spins instead, trading a
+// full core for the lowest hand-off latency.
+void processor_loop(Processor& processor, Venue venue, FrameChannel& channel,
+                    const std::atomic<bool>& stop, Metrics& metrics, bool busy_poll) {
     RawFrame frame;
-    frame.payload.reserve(16 * 1024);
+    const auto process_and_recycle = [&] {
+        processor.on_frame(venue, frame);
+        const auto latency = wall_clock_now().total_ns() - frame.recv.total_ns();
+        if (latency > 0) {
+            const auto ns = static_cast<std::uint64_t>(latency);
+            Metrics::inc(metrics.pipeline_latency_ns_total, ns);
+            Metrics::set_max(metrics.pipeline_latency_ns_max, ns);
+        }
+        channel.recycled.try_push(frame);  // hand the buffer back (kept here if pool full)
+    };
     for (;;) {
-        if (queue.try_pop(frame)) {
-            processor.on_frame(venue, frame);
+        if (channel.filled.try_pop(frame)) {
+            process_and_recycle();
             continue;
         }
         if (stop.load(std::memory_order_acquire)) {
             // Producer has finished: everything it pushed is visible now.
-            while (queue.try_pop(frame)) processor.on_frame(venue, frame);
+            while (channel.filled.try_pop(frame)) process_and_recycle();
             break;
         }
-        std::this_thread::sleep_for(std::chrono::microseconds(50));
+        if (busy_poll) {
+            cpu_relax();
+        } else {
+            std::this_thread::sleep_for(std::chrono::microseconds(50));
+        }
     }
     processor.flush();
 }
@@ -94,7 +116,7 @@ int run_live_capture(const Options& opts, Metrics& metrics) {
     net::steady_timer metrics_timer(ioc);
     net::steady_timer disconnect_timer(ioc);
 
-    SpscQueue<RawFrame> queue(kQueueCapacity);
+    FrameChannel channel(kQueueCapacity);
     std::vector<std::shared_ptr<WsClient>> clients;
     std::size_t clients_running = 0;
     // Once every client has closed, nothing but the signal wait keeps io_context busy.
@@ -104,7 +126,7 @@ int run_live_capture(const Options& opts, Metrics& metrics) {
     std::uint32_t shard_id = 0;
     for (const auto& group : shard_symbols(opts.symbols, opts.symbols_per_shard)) {
         clients.push_back(std::make_shared<WsClient>(ioc, ssl_ctx, make_endpoint(opts.venue, group),
-                                                     shard_id++, queue, metrics,
+                                                     shard_id++, channel, metrics,
                                                      on_client_stopped));
         ++clients_running;
     }
@@ -144,7 +166,7 @@ int run_live_capture(const Options& opts, Metrics& metrics) {
         metrics_timer.expires_after(std::chrono::seconds(opts.metrics_interval_sec));
         metrics_timer.async_wait([&](const boost::system::error_code& ec) {
             if (ec || stopping) return;
-            report_metrics(metrics, queue.size_approx());
+            report_metrics(metrics, channel.filled.size_approx());
             arm_metrics();
         });
     };
@@ -162,7 +184,7 @@ int run_live_capture(const Options& opts, Metrics& metrics) {
 
     std::thread processor_thread([&] {
         try {
-            processor_loop(processor, opts.venue, queue, processor_stop);
+            processor_loop(processor, opts.venue, channel, processor_stop, metrics, opts.busy_poll);
         } catch (const std::exception& e) {
             // Typically an output write failure: stop capturing rather than lose rows.
             Log::error("processor failed: ", e.what());
@@ -171,7 +193,7 @@ int run_live_capture(const Options& opts, Metrics& metrics) {
             // Keep draining so the network thread never stalls on a full queue.
             RawFrame discard;
             while (!processor_stop.load(std::memory_order_acquire)) {
-                while (queue.try_pop(discard)) {
+                while (channel.filled.try_pop(discard)) {
                 }
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));
             }
@@ -185,7 +207,7 @@ int run_live_capture(const Options& opts, Metrics& metrics) {
     processor_thread.join();
     clients.clear();
 
-    report_metrics(metrics, queue.size_approx());
+    report_metrics(metrics, channel.filled.size_approx());
     return processor_failed.load() ? 1 : 0;
 }
 

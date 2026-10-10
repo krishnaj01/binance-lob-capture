@@ -33,9 +33,17 @@ struct Metrics {
     Counter sequence_gaps{0};
     Counter market_rows_written{0};
     Counter book_rows_written{0};
+    // Live only: receive timestamp -> frame fully processed (queue wait + parse + book +
+    // both CSV appends; excludes the periodic flush to the OS).
+    Counter pipeline_latency_ns_total{0};
+    Counter pipeline_latency_ns_max{0};
 
     static void inc(Counter& c, std::uint64_t n = 1) noexcept {
         c.fetch_add(n, std::memory_order_relaxed);
+    }
+    // Single-writer maximum (no CAS needed: only the owning thread stores).
+    static void set_max(Counter& c, std::uint64_t v) noexcept {
+        if (v > c.load(std::memory_order_relaxed)) c.store(v, std::memory_order_relaxed);
     }
 
     // One "name=value" per line.

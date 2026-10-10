@@ -61,6 +61,8 @@ std::optional<Options> parse_options(int argc, char** argv) {
          "live capture length in seconds (0 = until Ctrl+C)")
         ("metrics-interval", po::value(&opts.metrics_interval_sec)->default_value(10),
          "seconds between metrics reports on stderr (0 = only at exit)")
+        ("busy-poll", po::bool_switch(&opts.busy_poll),
+         "processor thread spins when idle (lowest latency, burns one core)")
         ("replay", po::value(&opts.replay_file),
          "regenerate the order book CSV from this market-data CSV (no network)")
         ("debug-disconnect-every", po::value(&opts.debug_disconnect_sec)->default_value(0),

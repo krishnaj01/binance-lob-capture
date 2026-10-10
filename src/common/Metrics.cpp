@@ -24,9 +24,15 @@ void Metrics::report(std::ostream& os) const {
         {"sequence_gaps", &sequence_gaps},
         {"market_rows_written", &market_rows_written},
         {"book_rows_written", &book_rows_written},
+        {"pipeline_latency_ns_max", &pipeline_latency_ns_max},
     };
     for (const auto& [name, counter] : rows) {
         os << name << '=' << counter->load(std::memory_order_relaxed) << '\n';
+    }
+    const auto frames = frames_received.load(std::memory_order_relaxed);
+    if (frames > 0) {
+        os << "pipeline_latency_ns_avg="
+           << pipeline_latency_ns_total.load(std::memory_order_relaxed) / frames << '\n';
     }
 }
 

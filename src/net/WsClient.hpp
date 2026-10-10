@@ -15,7 +15,7 @@
 #include <optional>
 
 #include "common/Metrics.hpp"
-#include "common/SpscQueue.hpp"
+#include "md/FrameChannel.hpp"
 #include "md/Message.hpp"
 #include "net/StreamUrl.hpp"
 
@@ -24,10 +24,10 @@ namespace blc {
 // One TLS WebSocket connection ("shard") to a Binance combined-stream endpoint.
 //
 // Runs entirely on the io_context's thread (all handlers execute there; no locking).
-// Every complete text frame is timestamped, copied into a recycled RawFrame and pushed
-// into the SPSC queue for the processing thread. The network thread never blocks on the
-// processor: if the queue is full the frame is dropped and counted (the processor will
-// then see an update-id gap and resync the book).
+// Every complete text frame is timestamped, copied into a recycled RawFrame buffer and
+// pushed to the processing thread through the FrameChannel. The network thread never
+// blocks on the processor: if the queue is full the frame is dropped and counted (the
+// processor will then see an update-id gap and resync the book).
 //
 // Lifecycle: start() -> resolve -> TCP connect -> TLS handshake (peer certificate and
 // host name verified) -> WebSocket handshake -> read loop. Any failure closes the
@@ -41,7 +41,7 @@ public:
     static constexpr std::size_t kMaxMessageBytes = 1U << 20;  // reject absurd frames
 
     WsClient(boost::asio::io_context& ioc, boost::asio::ssl::context& ssl_ctx, Endpoint endpoint,
-             std::uint32_t shard_id, SpscQueue<RawFrame>& queue, Metrics& metrics,
+             std::uint32_t shard_id, FrameChannel& channel, Metrics& metrics,
              std::function<void()> on_stopped);
 
     WsClient(const WsClient&) = delete;
@@ -74,7 +74,7 @@ private:
     boost::asio::ssl::context& ssl_ctx_;
     Endpoint endpoint_;
     std::uint32_t shard_id_;
-    SpscQueue<RawFrame>& queue_;
+    FrameChannel& channel_;
     Metrics& metrics_;
     std::function<void()> on_stopped_;
 
@@ -82,7 +82,7 @@ private:
     boost::asio::steady_timer reconnect_timer_;
     std::optional<Stream> ws_;  // recreated for every connection attempt
     boost::beast::flat_buffer buffer_;
-    RawFrame frame_;  // recycled through the queue (see SpscQueue exchange semantics)
+    RawFrame frame_;  // buffer for the next frame, taken from channel_.recycled
 
     std::uint64_t next_epoch_ = 0;
     std::uint64_t epoch_ = 0;

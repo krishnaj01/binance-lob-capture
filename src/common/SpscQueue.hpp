@@ -16,9 +16,9 @@ namespace blc {
 // may call try_pop().
 //
 // Exchange semantics: both operations *swap* the caller's object with the slot instead
-// of moving into it. With T = a message holding a std::string buffer this recycles
-// buffers: the producer gets back a buffer the consumer already finished with, so in
-// steady state no frame causes a heap allocation.
+// of moving into it, so no T is ever destroyed or reallocated by the queue itself. Two
+// queues running in opposite directions therefore form an allocation-free buffer pool
+// (see md/FrameChannel.hpp).
 //
 // Synchronisation: head_ (consumer-owned) and tail_ (producer-owned) are monotonically
 // increasing counters. The producer publishes a slot with a release-store of tail_;

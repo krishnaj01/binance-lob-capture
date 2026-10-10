@@ -29,13 +29,13 @@ constexpr std::size_t kInitialFrameCapacity = 16 * 1024;
 }  // namespace
 
 WsClient::WsClient(net::io_context& ioc, ssl::context& ssl_ctx, Endpoint endpoint,
-                   std::uint32_t shard_id, SpscQueue<RawFrame>& queue, Metrics& metrics,
+                   std::uint32_t shard_id, FrameChannel& channel, Metrics& metrics,
                    std::function<void()> on_stopped)
     : ioc_(ioc),
       ssl_ctx_(ssl_ctx),
       endpoint_(std::move(endpoint)),
       shard_id_(shard_id),
-      queue_(queue),
+      channel_(channel),
       metrics_(metrics),
       on_stopped_(std::move(on_stopped)),
       resolver_(ioc),
@@ -96,6 +96,10 @@ void WsClient::connect() {
         return;
     }
     tls.set_verify_callback(ssl::host_name_verification(endpoint_.host));
+    // Asio enables SSL_MODE_RELEASE_BUFFERS, which frees OpenSSL's record buffers after
+    // every read and reallocates them on the next (~2 heap allocations per frame). Keep
+    // them instead: ~34 KB per connection buys an allocation-free TLS read path.
+    SSL_clear_mode(tls.native_handle(), SSL_MODE_RELEASE_BUFFERS);
 
     resolver_.async_resolve(endpoint_.host, endpoint_.port,
                             [self = shared_from_this()](beast::error_code ec,
@@ -168,28 +172,31 @@ void WsClient::read_next() {
         self->on_read(ec, n);
     });
 }
-
 void WsClient::on_read(beast::error_code ec, std::size_t bytes) {
     if (ec) return fail(ec, "read");
 
-    frame_.recv = wall_clock_now();  // as soon as the complete message is available
-    backoff_ = kInitialBackoff;      // healthy connection
+    const Timestamp recv = wall_clock_now();  // as soon as the complete message is available
+    backoff_ = kInitialBackoff;               // healthy connection
 
     Metrics::inc(metrics_.frames_received);
     Metrics::inc(metrics_.bytes_received, bytes);
 
     if (ws_->got_text()) {
         auto& payload = frame_.payload;
-        // Leave room for simdjson's padding so the processor can parse in place.
-        if (payload.capacity() < bytes + simdjson::SIMDJSON_PADDING) {
-            payload.reserve(bytes + simdjson::SIMDJSON_PADDING);
-        }
+        // Leave room for simdjson's padding so the processor can parse in place. Prefer a
+        // buffer the processor has returned; allocate only while the pool warms up.
+        const std::size_t needed = bytes + simdjson::SIMDJSON_PADDING;
+        if (payload.capacity() < needed) channel_.recycled.try_pop(frame_);
+        if (payload.capacity() < needed) payload.reserve(needed);
         const auto data = buffer_.cdata();
         payload.assign(static_cast<const char*>(data.data()), data.size());
+        // Every field is (re)assigned only now: try_pop() above swaps in a recycled frame
+        // that still carries the previous frame's metadata.
+        frame_.recv = recv;
         frame_.shard_id = shard_id_;
         frame_.conn_epoch = epoch_;
         frame_.conn_seq = seq_++;
-        if (!queue_.try_push(frame_)) Metrics::inc(metrics_.queue_full_drops);
+        if (!channel_.filled.try_push(frame_)) Metrics::inc(metrics_.queue_full_drops);
     }
     buffer_.consume(buffer_.size());
     read_next();
