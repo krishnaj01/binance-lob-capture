@@ -55,6 +55,10 @@ target_link_libraries(blc_core
 add_executable(binance_capture src/main.cpp)
 target_link_libraries(binance_capture PRIVATE blc_core blc_options)
 
+# Replay throughput benchmark (see README "Performance").
+add_executable(bench_replay tools/bench_replay.cpp)
+target_link_libraries(bench_replay PRIVATE blc_core blc_options)
+
 if(BLC_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
