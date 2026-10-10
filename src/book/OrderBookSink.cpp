@@ -1,6 +1,7 @@
 #include "book/OrderBookSink.hpp"
 
 #include <array>
+#include <charconv>
 
 namespace blc {
 
@@ -22,17 +23,29 @@ void OrderBookSink::write(const Timestamp& ts, std::uint64_t seq_no, std::int32_
     book.top(Side::Bid, bids.data(), kLevels);
     book.top(Side::Ask, asks.data(), kLevels);
 
-    out_.field(ts.sec);
-    out_.field(ts.nsec);
-    out_.field(seq_no);
-    out_.field(id);
-    out_.field(static_cast<char>(type));
-    out_.field(static_cast<char>(side));
-    for (const Level& l : bids) out_.field(l.price);
-    for (const Level& l : bids) out_.field(l.qty);
-    for (const Level& l : asks) out_.field(l.price);
-    for (const Level& l : asks) out_.field(l.qty);
-    out_.end_row();
+    // The whole row is integers and two letters, none of which need CSV quoting: format
+    // it into one stack buffer and hand it to the writer in one go.
+    constexpr std::size_t kMaxRow = 26 * 22;  // 26 fields x (20 digits + sign + comma)
+    char row[kMaxRow + 64];
+    char* p = row;
+    char* const end = row + sizeof(row);
+    const auto put = [&p, end](auto value) {
+        p = std::to_chars(p, end - 1, value).ptr;  // always leaves room for the comma
+        *p++ = ',';
+    };
+    put(ts.sec);
+    put(ts.nsec);
+    put(seq_no);
+    put(id);
+    *p++ = static_cast<char>(type);
+    *p++ = ',';
+    *p++ = static_cast<char>(side);
+    *p++ = ',';
+    for (const Level& l : bids) put(l.price);
+    for (const Level& l : bids) put(l.qty);
+    for (const Level& l : asks) put(l.price);
+    for (const Level& l : asks) put(l.qty);
+    out_.write_row(std::string_view(row, static_cast<std::size_t>(p - row - 1)));  // drop last ','
 }
 
 }  // namespace blc

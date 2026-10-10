@@ -49,6 +49,14 @@ public:
     // Terminates the current row and flushes if the buffer is over the threshold.
     void end_row();
 
+    // Appends a complete, already CSV-formatted row (no trailing newline) and ends it.
+    // For callers that format a fixed schema into a stack buffer in one pass.
+    void write_row(std::string_view formatted) {
+        buffer_.append(formatted);
+        row_has_fields_ = true;
+        end_row();
+    }
+
     // Pushes buffered bytes to the OS (fwrite + fflush).
     void flush();
 

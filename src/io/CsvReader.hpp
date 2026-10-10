@@ -49,6 +49,8 @@ private:
         return static_cast<unsigned char>(buf_[pos_]);
     }
     bool refill();
+    int read_unquoted();  // returns the consumed terminator (',', '\n', '\r') or kEof
+    void read_quoted();   // after the opening quote; consumes the closing quote
     [[noreturn]] void fail(const char* what) const;
 
     struct FileCloser {
