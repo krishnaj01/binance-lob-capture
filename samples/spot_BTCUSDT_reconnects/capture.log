@@ -1,0 +1,14 @@
+2026-10-10T03:16:23.456Z INFO writing samples/spot_BTCUSDT_reconnects/market_data_spot_BTCUSDT_2026-10-10.csv and samples/spot_BTCUSDT_reconnects/market_data_spot_BTCUSDT_2026-10-10_orderbook.csv
+2026-10-10T03:16:23.470Z INFO shard 0: connecting to wss://stream.binance.com:9443/stream?streams=btcusdt@depth@100ms/btcusdt@depth5@100ms/btcusdt@trade
+2026-10-10T03:16:24.061Z INFO shard 0: connected (conn_epoch 0)
+2026-10-10T03:16:33.470Z WARN shard 0: debug: forcing disconnect
+2026-10-10T03:16:33.470Z WARN shard 0: read failed: Operation canceled
+2026-10-10T03:16:33.470Z INFO shard 0: reconnecting in 500 ms
+2026-10-10T03:16:34.665Z INFO shard 0: connected (conn_epoch 1)
+2026-10-10T03:16:43.470Z WARN shard 0: debug: forcing disconnect
+2026-10-10T03:16:43.470Z WARN shard 0: read failed: Operation canceled
+2026-10-10T03:16:43.470Z INFO shard 0: reconnecting in 500 ms
+2026-10-10T03:16:44.645Z INFO shard 0: connected (conn_epoch 2)
+2026-10-10T03:16:53.470Z INFO shutting down: duration elapsed
+2026-10-10T03:16:53.774Z INFO shard 0: closed
+2026-10-10T03:16:53.774Z INFO metrics: frames_received=568 bytes_received=184540 reconnects=2 connect_failures=0 queue_full_drops=0 messages_processed=568 parse_errors=0 decimal_errors=0 depth_diffs_applied=262 depth_diffs_stale=0 depth_diffs_unsynced=0 depth5_applied=262 depth5_stale=0 trades=44 sequence_gaps=0 market_rows_written=568 book_rows_written=570 pipeline_latency_ns_max=287070 pipeline_latency_ns_avg=65197 queue_depth=0
