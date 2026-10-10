@@ -11,11 +11,14 @@ output/
 *.csv
 # ...except checked-in test fixtures and the submission sample
 !tests/fixtures/*.csv
-!samples/*.csv
+!samples/**/*.csv
 
-# Secrets / local config (never commit)
+# Credentials / local config (never commit)
 .env
-config/secrets.json
+.env.*
+config/
+*.pem
+*.key
 
 # Editors / tooling
 .vscode/
